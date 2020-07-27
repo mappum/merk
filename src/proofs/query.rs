@@ -2,7 +2,7 @@ use std::collections::LinkedList;
 use crate::error::Result;
 use crate::tree::Hash;
 use super::{Op, Node, encoding::encode_into};
-use crate::tree::{Link, RefWalker, Fetch};
+use crate::tree::{Link, RefWalker, Fetch, Key, Value};
 
 impl Link {
     /// Creates a `Node::Hash` from this link. Panics if the link is of variant
@@ -25,8 +25,8 @@ impl<'a, S> RefWalker<'a, S>
     /// Creates a `Node::KV` from the key/value pair of the root node.
     pub(crate) fn to_kv_node(&self) -> Node {
         Node::KV(
-            self.tree().key().to_vec(),
-            self.tree().value().to_vec()
+            self.tree().key().into(),
+            self.tree().value().into()
         )
     }
 
@@ -47,7 +47,7 @@ impl<'a, S> RefWalker<'a, S>
     /// right edge, respectively.
     pub(crate) fn create_proof(
         &mut self,
-        keys: &[Vec<u8>],
+        keys: &[Key],
     ) -> Result<(
         LinkedList<Op>,
         (bool, bool)
@@ -102,7 +102,7 @@ impl<'a, S> RefWalker<'a, S>
     fn create_child_proof(
         &mut self,
         left: bool,
-        keys: &[Vec<u8>]
+        keys: &[Key]
     ) -> Result<(
         LinkedList<Op>,
         (bool, bool)
@@ -125,17 +125,19 @@ impl<'a, S> RefWalker<'a, S>
 
 #[cfg(test)]
 mod test {
+    use smallvec::smallvec;
+
     use super::*;
     use crate::tree::{Tree, PanicSource, RefWalker};
 
     fn make_3_node_tree() -> Tree {
         Tree::from_fields(
-            vec![5], vec![5], [105; 20],
+            smallvec![5], smallvec![5], [105; 20],
             Some(Link::Stored {
                 child_heights: (0, 0),
                 hash: [3; 20],
                 tree: Tree::from_fields(
-                    vec![3], vec![3], [103; 20],
+                    smallvec![3], smallvec![3], [103; 20],
                     None, None
                 )
             }),
@@ -143,7 +145,7 @@ mod test {
                 child_heights: (0, 0),
                 hash: [7; 20],
                 tree: Tree::from_fields(
-                    vec![7], vec![7], [107; 20],
+                    smallvec![7], smallvec![7], [107; 20],
                     None, None
                 )
             })
@@ -175,12 +177,12 @@ mod test {
         let mut walker = RefWalker::new(&mut tree, PanicSource {});
 
         let (proof, absence) = walker
-            .create_proof(vec![vec![5]].as_slice())
+            .create_proof(vec![smallvec![5]].as_slice())
             .expect("create_proof errored");
 
         let mut iter = proof.iter();
         assert_eq!(iter.next(), Some(&Op::Push(Node::Hash([3; 20]))));
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![5], vec![5]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![5], smallvec![5]))));
         assert_eq!(iter.next(), Some(&Op::Parent));
         assert_eq!(iter.next(), Some(&Op::Push(Node::Hash([7; 20]))));
         assert_eq!(iter.next(), Some(&Op::Child));
@@ -194,11 +196,11 @@ mod test {
         let mut walker = RefWalker::new(&mut tree, PanicSource {});
 
         let (proof, absence) = walker
-            .create_proof(vec![vec![3]].as_slice())
+            .create_proof(vec![smallvec![3]].as_slice())
             .expect("create_proof errored");
 
         let mut iter = proof.iter();
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![3], vec![3]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![3], smallvec![3]))));
         assert_eq!(iter.next(), Some(&Op::Push(Node::KVHash([105; 20]))));
         assert_eq!(iter.next(), Some(&Op::Parent));
         assert_eq!(iter.next(), Some(&Op::Push(Node::Hash([7; 20]))));
@@ -213,14 +215,14 @@ mod test {
         let mut walker = RefWalker::new(&mut tree, PanicSource {});
 
         let (proof, absence) = walker
-            .create_proof(vec![vec![3], vec![7]].as_slice())
+            .create_proof(vec![smallvec![3], smallvec![7]].as_slice())
             .expect("create_proof errored");
 
         let mut iter = proof.iter();
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![3], vec![3]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![3], smallvec![3]))));
         assert_eq!(iter.next(), Some(&Op::Push(Node::KVHash([105; 20]))));
         assert_eq!(iter.next(), Some(&Op::Parent));
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![7], vec![7]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![7], smallvec![7]))));
         assert_eq!(iter.next(), Some(&Op::Child));
         assert!(iter.next().is_none());
         assert_eq!(absence, (false, false));
@@ -232,14 +234,14 @@ mod test {
         let mut walker = RefWalker::new(&mut tree, PanicSource {});
 
         let (proof, absence) = walker
-            .create_proof(vec![vec![3], vec![5], vec![7]].as_slice())
+            .create_proof(vec![smallvec![3], smallvec![5], smallvec![7]].as_slice())
             .expect("create_proof errored");
 
         let mut iter = proof.iter();
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![3], vec![3]))));
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![5], vec![5]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![3], smallvec![3]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![5], smallvec![5]))));
         assert_eq!(iter.next(), Some(&Op::Parent));
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![7], vec![7]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![7], smallvec![7]))));
         assert_eq!(iter.next(), Some(&Op::Child));
         assert!(iter.next().is_none());
         assert_eq!(absence, (false, false));
@@ -251,14 +253,14 @@ mod test {
         let mut walker = RefWalker::new(&mut tree, PanicSource {});
 
         let (proof, absence) = walker
-            .create_proof(vec![vec![8]].as_slice())
+            .create_proof(vec![smallvec![8]].as_slice())
             .expect("create_proof errored");
 
         let mut iter = proof.iter();
         assert_eq!(iter.next(), Some(&Op::Push(Node::Hash([3; 20]))));
         assert_eq!(iter.next(), Some(&Op::Push(Node::KVHash([105; 20]))));
         assert_eq!(iter.next(), Some(&Op::Parent));
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![7], vec![7]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![7], smallvec![7]))));
         assert_eq!(iter.next(), Some(&Op::Child));
         assert!(iter.next().is_none());
         assert_eq!(absence, (false, true));
@@ -270,14 +272,14 @@ mod test {
         let mut walker = RefWalker::new(&mut tree, PanicSource {});
 
         let (proof, absence) = walker
-            .create_proof(vec![vec![6]].as_slice())
+            .create_proof(vec![smallvec![6]].as_slice())
             .expect("create_proof errored");
 
         let mut iter = proof.iter();
         assert_eq!(iter.next(), Some(&Op::Push(Node::Hash([3; 20]))));
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![5], vec![5]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![5], smallvec![5]))));
         assert_eq!(iter.next(), Some(&Op::Parent));
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![7], vec![7]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![7], smallvec![7]))));
         assert_eq!(iter.next(), Some(&Op::Child));
         assert!(iter.next().is_none());
         assert_eq!(absence, (false, false));
@@ -286,17 +288,17 @@ mod test {
     #[test]
     fn doc_proof() {
         let mut tree = Tree::from_fields(
-            vec![5], vec![5], [105; 20],
+            smallvec![5], smallvec![5], [105; 20],
             Some(Link::Stored {
                 child_heights: (0, 0),
                 hash: [2; 20],
                 tree: Tree::from_fields(
-                    vec![2], vec![2], [102; 20],
+                    smallvec![2], smallvec![2], [102; 20],
                     Some(Link::Stored {
                         child_heights: (0, 0),
                         hash: [1; 20],
                         tree: Tree::from_fields(
-                            vec![1], vec![1], [101; 20],
+                            smallvec![1], smallvec![1], [101; 20],
                             None, None
                         )
                     }),
@@ -304,12 +306,12 @@ mod test {
                         child_heights: (0, 0),
                         hash: [4; 20],
                         tree: Tree::from_fields(
-                            vec![4], vec![4], [104; 20],
+                            smallvec![4], smallvec![4], [104; 20],
                             Some(Link::Stored {
                                 child_heights: (0, 0),
                                 hash: [3; 20],
                                 tree: Tree::from_fields(
-                                    vec![3], vec![3], [103; 20],
+                                    smallvec![3], smallvec![3], [103; 20],
                                     None, None
                                 )
                             }),
@@ -322,17 +324,17 @@ mod test {
                 child_heights: (0, 0),
                 hash: [9; 20],
                 tree: Tree::from_fields(
-                    vec![9], vec![9], [109; 20],
+                    smallvec![9], smallvec![9], [109; 20],
                     Some(Link::Stored {
                         child_heights: (0, 0),
                         hash: [7; 20],
                         tree: Tree::from_fields(
-                            vec![7], vec![7], [107; 20],
+                            smallvec![7], smallvec![7], [107; 20],
                             Some(Link::Stored {
                                 child_heights: (0, 0),
                                 hash: [6; 20],
                                 tree: Tree::from_fields(
-                                    vec![6], vec![6], [106; 20],
+                                    smallvec![6], smallvec![6], [106; 20],
                                     None, None
                                 )
                             }),
@@ -340,7 +342,7 @@ mod test {
                                 child_heights: (0, 0),
                                 hash: [8; 20],
                                 tree: Tree::from_fields(
-                                    vec![8], vec![8], [108; 20],
+                                    smallvec![8], smallvec![8], [108; 20],
                                     None, None
                                 )
                             })
@@ -350,12 +352,12 @@ mod test {
                         child_heights: (0, 0),
                         hash: [11; 20],
                         tree: Tree::from_fields(
-                            vec![11], vec![11], [111; 20],
+                            smallvec![11], smallvec![11], [111; 20],
                             Some(Link::Stored {
                                 child_heights: (0, 0),
                                 hash: [10; 20],
                                 tree: Tree::from_fields(
-                                    vec![10], vec![10], [110; 20],
+                                    smallvec![10], smallvec![10], [110; 20],
                                     None, None
                                 )
                             }),
@@ -368,18 +370,18 @@ mod test {
         let mut walker = RefWalker::new(&mut tree, PanicSource {});
 
         let (proof, absence) = walker.create_proof(vec![
-            vec![1],
-            vec![2],
-            vec![3],
-            vec![4]
+            smallvec![1],
+            smallvec![2],
+            smallvec![3],
+            smallvec![4]
         ].as_slice()).expect("create_proof errored");
 
         let mut iter = proof.iter();
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![1], vec![1]))));
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![2], vec![2]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![1], smallvec![1]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![2], smallvec![2]))));
         assert_eq!(iter.next(), Some(&Op::Parent));
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![3], vec![3]))));
-        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(vec![4], vec![4]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![3], smallvec![3]))));
+        assert_eq!(iter.next(), Some(&Op::Push(Node::KV(smallvec![4], smallvec![4]))));
         assert_eq!(iter.next(), Some(&Op::Parent));
         assert_eq!(iter.next(), Some(&Op::Child));
         assert_eq!(iter.next(), Some(&Op::Push(Node::KVHash([105; 20]))));

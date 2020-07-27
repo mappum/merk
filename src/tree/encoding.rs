@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use super::{Tree, Link, Hash};
+use super::{Tree, Link, Hash, Key, Value};
 use crate::error::Result;
 
 // TODO: Encode, Decode traits
@@ -38,10 +38,10 @@ impl Link {
     pub fn decode(bytes: &[u8]) -> Result<Link> {
         let mut offset = 0;
 
-        let length = bytes[offset];
+        let length = bytes[offset] as usize;
         offset += 1;
 
-        let key = bytes[offset..offset + length as usize].to_vec();
+        let key = bytes[offset..offset + length].into();
         offset += length as usize;
 
         let mut hash: Hash = Default::default();
@@ -95,7 +95,7 @@ impl Tree {
             + ((bytes[offset + 1] as usize) << 8);
         offset += 2;
 
-        let value = bytes[offset..offset + value_len].to_vec();
+        let value = bytes[offset..offset + value_len].into();
         offset += value_len;
 
         let mut kv_hash: Hash = Default::default();
@@ -123,7 +123,7 @@ impl Tree {
         };
 
         Ok(Tree::from_fields(
-            key.to_vec(),
+            key.into(),
             value,
             kv_hash,
             left,

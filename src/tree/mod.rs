@@ -12,6 +12,7 @@ mod fuzz_tests;
 use std::cmp::max;
 
 use failure::bail;
+use smallvec::SmallVec;
 
 pub use walk::{Walker, RefWalker, Fetch};
 use super::error::Result;
@@ -20,6 +21,9 @@ use kv::KV;
 pub use link::Link;
 pub use hash::{Hash, kv_hash, node_hash, NULL_HASH, HASH_LENGTH};
 pub use ops::{Batch, BatchEntry, PanicSource, Op};
+
+pub type Key = SmallVec<[u8; 36]>;
+pub type Value = SmallVec<[u8; 96]>;
 
 /// The fields of the `Tree` type, stored on the heap.
 struct TreeInner {
@@ -41,7 +45,7 @@ impl Tree {
     /// Creates a new `Tree` with the given key and value, and no children.
     /// 
     /// Hashes the key/value pair and initializes the `kv_hash` field.
-    pub fn new(key: Vec<u8>, value: Vec<u8>) -> Self {
+    pub fn new(key: Key, value: Value) -> Self {
         Tree {
             inner: Box::new(TreeInner {
                 kv: KV::new(key, value),
@@ -54,8 +58,8 @@ impl Tree {
     /// Creates a `Tree` by supplying all the raw struct fields (mainly useful
     /// for testing). The `kv_hash` and `Link`s are not ensured to be correct.
     pub fn from_fields(
-        key: Vec<u8>,
-        value: Vec<u8>,
+        key: Key,
+        value: Value,
         kv_hash: Hash,
         left: Option<Link>,
         right: Option<Link>
@@ -78,7 +82,7 @@ impl Tree {
     /// Consumes the tree and returns its root node's key, without having to
     /// clone or allocate.
     #[inline]
-    pub fn take_key(self) -> Vec<u8> {
+    pub fn take_key(self) -> Key {
         self.inner.kv.take_key()
     }
 
@@ -283,7 +287,7 @@ impl Tree {
     /// Replaces the root node's value with the given value and returns the
     /// modified `Tree`.
     #[inline]
-    pub fn with_value(mut self, value: Vec<u8>) -> Self {
+    pub fn with_value(mut self, value: Value) -> Self {
         self.inner.kv = self.inner.kv.with_value(value);
         self
     }

@@ -4,10 +4,13 @@ use std::path::{Path, PathBuf};
 
 use failure::{bail, format_err};
 use rocksdb::ColumnFamilyDescriptor;
+use smallvec::{SmallVec, smallvec};
 
 use crate::error::Result;
 use crate::tree::{
     Tree,
+    Key,
+    Value,
     Op,
     Link,
     Fetch,
@@ -148,16 +151,16 @@ impl Merk {
     /// ```
     pub fn apply(&mut self, batch: &Batch, aux: &Batch) -> Result<()> {
         // ensure keys in batch are sorted and unique
-        let mut maybe_prev_key = None;
+        let mut maybe_prev_key: Option<Key> = None;
         for (key, _) in batch.iter() {
             if let Some(prev_key) = maybe_prev_key {
-                if prev_key > *key {
+                if prev_key.as_slice() > key.as_slice() {
                     bail!("Keys in batch must be sorted");
-                } else if prev_key == *key {
+                } else if prev_key.as_slice() == key.as_slice() {
                     bail!("Keys in batch must be unique");
                 }
             }
-            maybe_prev_key = Some(key.to_vec());
+            maybe_prev_key = Some(key.clone());
         }
 
         unsafe { self.apply_unchecked(batch, aux) }
@@ -216,18 +219,18 @@ impl Merk {
     /// check adds some overhead, so if you are sure your batch is sorted and
     /// unique you can use the unsafe `prove_unchecked` for a small performance
     /// gain.
-    pub fn prove(&self, query: &[Vec<u8>]) -> Result<Vec<u8>> {
+    pub fn prove(&self, query: &[Key]) -> Result<Vec<u8>> {
         // ensure keys in query are sorted and unique
-        let mut maybe_prev_key = None;
+        let mut maybe_prev_key: Option<Key> = None;
         for key in query.iter() {
             if let Some(prev_key) = maybe_prev_key {
-                if prev_key > *key {
+                if prev_key.as_slice() > key.as_slice() {
                     bail!("Keys in query must be sorted");
-                } else if prev_key == *key {
+                } else if prev_key.as_slice() == key.as_slice() {
                     bail!("Keys in query must be unique");
                 }
             }
-            maybe_prev_key = Some(key.to_vec());
+            maybe_prev_key = Some(key.clone());
         }
 
         unsafe { self.prove_unchecked(query) }
@@ -245,7 +248,7 @@ impl Merk {
     /// if they are not, there will be undefined behavior. For a safe version of
     /// this method which checks to ensure the batch is sorted and unique, see
     /// `prove`.
-    pub unsafe fn prove_unchecked(&self, query: &[Vec<u8>]) -> Result<Vec<u8>> {
+    pub unsafe fn prove_unchecked(&self, query: &[Key]) -> Result<Vec<u8>> {
         self.use_tree_mut(|maybe_tree| {
             let tree = match maybe_tree {
                 None => bail!("Cannot create proof for empty tree"),
@@ -265,12 +268,12 @@ impl Merk {
         Ok(self.db.flush()?)
     }
 
-    pub fn commit(&mut self, deleted_keys: LinkedList<Vec<u8>>, aux: &Batch) -> Result<()> {
+    pub fn commit(&mut self, deleted_keys: LinkedList<Key>, aux: &Batch) -> Result<()> {
         let internal_cf = self.db.cf_handle("internal").unwrap();
         let aux_cf = self.db.cf_handle("aux").unwrap();
 
         let mut batch = rocksdb::WriteBatch::default();
-        let mut to_batch = self.use_tree_mut(|maybe_tree| -> Result<Vec<(Vec<u8>, Option<Vec<u8>>)>> {
+        let mut to_batch = self.use_tree_mut(|maybe_tree| -> Result<Vec<(Key, Option<SmallVec<[u8; 256]>>)>> {
             // TODO: concurrent commit
             if let Some(tree) = maybe_tree {
                 // TODO: configurable committer
@@ -365,22 +368,31 @@ impl<'a> Fetch for MerkSource<'a> {
 }
 
 struct MerkCommitter {
-    batch: Vec<(Vec<u8>, Option<Vec<u8>>)>,
+    batch: Vec<(Key, Option<SmallVec<[u8; 256]>>)>,
     height: u8,
-    levels: u8
+    levels: u8,
+    enc_buf: Vec<u8>
 }
 
 impl MerkCommitter {
     fn new(height: u8, levels: u8) -> Self {
-        MerkCommitter { batch: Vec::with_capacity(10000), height, levels }
+        MerkCommitter {
+            enc_buf: Vec::with_capacity(256),
+            batch: Vec::with_capacity(10000),
+            height,
+            levels
+        }
     }
 }
 
 impl Commit for MerkCommitter {
     fn write(&mut self, tree: &Tree) -> Result<()> {
-        let mut buf = Vec::with_capacity(tree.encoding_length());
-        tree.encode_into(&mut buf);
-        self.batch.push((tree.key().to_vec(), Some(buf)));
+        self.enc_buf.clear();
+        tree.encode_into(&mut self.enc_buf);
+
+        let encoded: SmallVec<[u8; 256]> = self.enc_buf[..].into();
+
+        self.batch.push((tree.key().into(), Some(encoded)));
         Ok(())
     }
 

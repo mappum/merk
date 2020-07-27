@@ -108,28 +108,28 @@ pub fn verify(
 ) -> Result<Vec<Option<Vec<u8>>>> {
     // TODO: enforce a maximum proof size
 
-    let mut stack: Vec<Tree> = Vec::with_capacity(32);
     let mut output = Vec::with_capacity(keys.len());
 
     let mut key_index = 0;
-    let mut last_push = None;
+    // let mut last_push = None;
 
     fn try_pop(stack: &mut Vec<Tree>) -> Result<Tree> {
         match stack.pop() {
             None => bail!("Stack underflow"),
             Some(tree) => Ok(tree)
         }
-    };
+    }
 
-    for op in Decoder::new(bytes) {
-        match op? {
+    let mut stack: Vec<Tree> = Vec::with_capacity(32);
+    let mut push = |op| -> Result<()> {
+        let tree = match op? {
             Op::Parent => {
                 let (mut parent, child) = (
                     try_pop(&mut stack)?,
                     try_pop(&mut stack)?
                 );
                 parent.attach(true, child)?;
-                stack.push(parent);
+                parent
             },
             Op::Child => {
                 let (child, mut parent) = (
@@ -137,60 +137,63 @@ pub fn verify(
                     try_pop(&mut stack)?
                 );
                 parent.attach(false, child)?;
-                stack.push(parent);
+                parent
             },
-            Op::Push(node) => {
-                let node_clone = node.clone();
-                let tree: Tree = node.into();
-                stack.push(tree);
+            Op::Push(node) => node.into()
+        };
+        stack.push(tree);
+        Ok(())
+    };
 
-                if let Node::KV(key, value) = &node_clone {
-                    // keys should always be increasing
-                    if let Some(Node::KV(last_key, _)) = &last_push {
-                        if key <= last_key {
-                            bail!("Incorrect key ordering");
-                        }
-                    }
+    Decoder::new(bytes)
+        .map(push)
+        .collect::<Result<_>>()?;
 
-                    loop {
-                        if key_index >= keys.len() || *key < keys[key_index] {
-                            break;
-                        } else if key == &keys[key_index] {
-                            // KV for queried key
-                            output.push(Some(value.clone()));
-                        } else if *key > keys[key_index] {
-                            match &last_push {
-                                None | Some(Node::KV(_, _)) => {
-                                    // previous push was a boundary (global edge or lower key),
-                                    // so this is a valid absence proof
-                                    output.push(None);
-                                },
-                                // proof is incorrect since it skipped queried keys
-                                _ => bail!("Proof incorrectly formed")
-                            }
-                        }
+    //     // if let Node::KV(key, value) = &node_clone {
+    //     //     // keys should always be increasing
+    //     //     if let Some(Node::KV(last_key, _)) = &last_push {
+    //     //         if key <= last_key {
+    //     //             bail!("Incorrect key ordering");
+    //     //         }
+    //     //     }
 
-                        key_index += 1;
-                    }
-                }
+    //     //     loop {
+    //     //         if key_index >= keys.len() || *key < keys[key_index] {
+    //     //             break;
+    //     //         } else if key == &keys[key_index] {
+    //     //             // KV for queried key
+    //     //             output.push(Some(value.clone()));
+    //     //         } else if *key > keys[key_index] {
+    //     //             match &last_push {
+    //     //                 None | Some(Node::KV(_, _)) => {
+    //     //                     // previous push was a boundary (global edge or lower key),
+    //     //                     // so this is a valid absence proof
+    //     //                     output.push(None);
+    //     //                 },
+    //     //                 // proof is incorrect since it skipped queried keys
+    //     //                 _ => bail!("Proof incorrectly formed")
+    //     //             }
+    //     //         }
 
-                last_push = Some(node_clone);
-            }
-        }
-    }
+    //     //         key_index += 1;
+    //     //     }
+    //     // }
 
-    // absence proofs for right edge
-    if key_index < keys.len() {
-        if let Some(Node::KV(_, _)) = last_push {
-            for _ in 0..(keys.len() - key_index) {
-                output.push(None);
-            }
-        } else {
-            bail!("Proof incorrectly formed");
-        }
-    } else {
-        debug_assert_eq!(keys.len(), output.len());
-    }
+    //     // last_push = Some(node_clone);
+    // }
+
+    // // absence proofs for right edge
+    // if key_index < keys.len() {
+    //     if let Some(Node::KV(_, _)) = last_push {
+    //         for _ in 0..(keys.len() - key_index) {
+    //             output.push(None);
+    //         }
+    //     } else {
+    //         bail!("Proof incorrectly formed");
+    //     }
+    // } else {
+    //     debug_assert_eq!(keys.len(), output.len());
+    // }
 
     if stack.len() != 1 {
         bail!("Expected proof to result in exactly one stack item");

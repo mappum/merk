@@ -1,3 +1,4 @@
+use super::{Key, Value};
 use super::hash::{Hash, kv_hash};
 
 // TODO: maybe use something similar to Vec but without capacity field,
@@ -7,15 +8,15 @@ use super::hash::{Hash, kv_hash};
 
 /// Contains a key/value pair, and the hash of the key/value pair.
 pub struct KV {
-    key: Vec<u8>,
-    value: Vec<u8>,
+    key: Key,
+    value: Value,
     hash: Hash
 }
 
 impl KV {
     /// Creates a new `KV` with the given key and value and computes its hash.
     #[inline]
-    pub fn new(key: Vec<u8>, value: Vec<u8>) -> Self {
+    pub fn new(key: Key, value: Value) -> Self {
         // TODO: length checks?
         let hash = kv_hash(key.as_slice(), value.as_slice());
         KV { key, value, hash }
@@ -24,14 +25,14 @@ impl KV {
     /// Creates a new `KV` with the given key, value, and hash. The hash is not
     /// checked to be correct for the given key/value.
     #[inline]
-    pub fn from_fields(key: Vec<u8>, value: Vec<u8>, hash: Hash) -> Self {
+    pub fn from_fields(key: Key, value: Value, hash: Hash) -> Self {
         KV { key, value, hash }
     }
 
     /// Replaces the `KV`'s value with the given value, updates the hash, and
     /// returns the modified `KV`.
     #[inline]
-    pub fn with_value(mut self, value: Vec<u8>) -> Self {
+    pub fn with_value(mut self, value: Value) -> Self {
         // TODO: length check?
         self.value = value;
         self.hash = kv_hash(self.key(), self.value());
@@ -58,7 +59,7 @@ impl KV {
 
     /// Consumes the `KV` and returns its key without allocating or cloning.
     #[inline]
-    pub fn take_key(self) -> Vec<u8> {
+    pub fn take_key(self) -> Key {
         self.key
     }
 }

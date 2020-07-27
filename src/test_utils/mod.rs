@@ -3,10 +3,15 @@ mod temp_merk;
 
 use std::ops::Range;
 use std::convert::TryInto;
+
 use byteorder::{BigEndian, WriteBytesExt};
 use rand::prelude::*;
+use smallvec::smallvec;
+
 use crate::tree::{
     Tree,
+    Key,
+    Value,
     Walker,
     NoopCommit,
     Batch,
@@ -67,21 +72,17 @@ pub fn apply_to_memonly(maybe_tree: Option<Tree>, batch: &Batch) -> Option<Tree>
         .0
         .map(|mut tree| {
             tree.commit(&mut NoopCommit {}).expect("commit failed");
-            println!("{:?}", &tree);
             assert_tree_invariants(&tree);
             tree
         })
 }
 
-pub fn seq_key(n: u64) -> Vec<u8> {
-    let mut key = vec![0; 0];
-    key.write_u64::<BigEndian>(n)
-        .expect("writing to key failed");
-    key
+pub fn seq_key(n: u64) -> Key {
+    n.to_be_bytes()[..].into()
 }
 
 pub fn put_entry(n: u64) -> BatchEntry {
-    (seq_key(n), Op::Put(vec![123; 60]))
+    (seq_key(n), Op::Put(smallvec![123; 60]))
 }
 
 pub fn del_entry(n: u64) -> BatchEntry {
@@ -138,8 +139,8 @@ pub fn make_tree_rand(
     assert!(node_count >= batch_size);
     assert!((node_count % batch_size) == 0);
 
-    let value = vec![123; 60];
-    let mut tree = Tree::new(vec![0; 20], value.clone());
+    let value = smallvec![123; 60];
+    let mut tree = Tree::new(smallvec![0; 20], value.clone());
 
     let mut seed = initial_seed;
     
@@ -161,8 +162,8 @@ pub fn make_tree_seq(node_count: u64) -> Tree {
         node_count
     };
 
-    let value = vec![123; 60];
-    let mut tree = Tree::new(vec![0; 20], value.clone());
+    let value = smallvec![123; 60];
+    let mut tree = Tree::new(smallvec![0; 20], value.clone());
     
     let batch_count = node_count / batch_size;
     for i in 0..batch_count {

@@ -2,12 +2,12 @@ use std::collections::LinkedList;
 use std::fmt;
 use failure::bail;
 use crate::error::Result;
-use super::{Tree, Link, Walker, Fetch};
+use super::{Tree, Link, Walker, Fetch, Key, Value};
 use Op::*;
 
 /// An operation to be applied to a key in the store.
 pub enum Op {
-    Put(Vec<u8>),
+    Put(Value),
     Delete
 }
 
@@ -21,7 +21,7 @@ impl fmt::Debug for Op {
 }
 
 /// A single `(key, operation)` pair.
-pub type BatchEntry = (Vec<u8>, Op);
+pub type BatchEntry = (Key, Op);
 
 /// A mapping of keys and operations. Keys should be sorted and unique.
 pub type Batch = [BatchEntry];
@@ -47,7 +47,7 @@ impl<S> Walker<S>
     pub fn apply_to(
         maybe_tree: Option<Self>,
         batch: &Batch
-    ) -> Result<(Option<Tree>, LinkedList<Vec<u8>>)> {
+    ) -> Result<(Option<Tree>, LinkedList<Key>)> {
         let (maybe_walker, deleted_keys) = if batch.is_empty() {
             (maybe_tree, LinkedList::default())
         } else {
@@ -82,7 +82,7 @@ impl<S> Walker<S>
         };
 
         // TODO: take from batch so we don't have to clone
-        let mid_tree = Tree::new(mid_key.to_vec(), mid_value.to_vec());
+        let mid_tree = Tree::new(mid_key.clone(), mid_value.clone());
         let mid_walker = Walker::new(mid_tree, PanicSource {});
         Ok(mid_walker
             .recurse(batch, mid_index, true)?
@@ -97,7 +97,7 @@ impl<S> Walker<S>
     fn apply(
         self,
         batch: &Batch
-    ) -> Result<(Option<Self>, LinkedList<Vec<u8>>)> {
+    ) -> Result<(Option<Self>, LinkedList<Key>)> {
         // binary search to see if this node's key is in the batch, and to split
         // into left and right batches
         let search = batch.binary_search_by(
@@ -107,14 +107,14 @@ impl<S> Walker<S>
             // a key matches this node's key, apply op to this node
             match &batch[index].1 {
                 // TODO: take vec from batch so we don't need to clone
-                Put(value) => self.with_value(value.to_vec()),
+                Put(value) => self.with_value(value.clone()),
                 Delete => {
                     // TODO: we shouldn't have to do this as 2 different calls to apply
                     let source = self.clone_source();
                     let wrap = |maybe_tree: Option<Tree>| {
                         maybe_tree.map(|tree| Self::new(tree, source.clone()))
                     };
-                    let key = self.tree().key().to_vec();
+                    let key = self.tree().key().into();
                     let maybe_tree = self.remove()?;
 
                     let (maybe_tree, mut deleted_keys) =
@@ -153,7 +153,7 @@ impl<S> Walker<S>
         batch: &Batch,
         mid: usize,
         exclusive: bool
-    ) -> Result<(Option<Self>, LinkedList<Vec<u8>>)> {
+    ) -> Result<(Option<Self>, LinkedList<Key>)> {
         let left_batch = &batch[..mid];
         let right_batch = if exclusive {
             &batch[mid + 1..]

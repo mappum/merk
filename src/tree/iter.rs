@@ -1,4 +1,4 @@
-use super::Tree;
+use super::{Tree, Key, Value};
 
 /// An entry stored on an `Iter`'s stack, containing a reference to a `Tree`,
 /// and its traversal state.
@@ -26,10 +26,10 @@ impl<'a> StackItem<'a> {
     }
 
     /// Gets a tuple to yield from an `Iter`, `(key, value)`.
-    fn to_entry(&self) -> (Vec<u8>, Vec<u8>) {
+    fn to_entry(&self) -> (Key, Value) {
         (
-            self.tree.key().to_vec(),
-            self.tree.value().to_vec()
+            self.tree.key().into(),
+            self.tree.value().into()
         )
     }
 }
@@ -57,7 +57,7 @@ impl<'a> Tree {
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = (Vec<u8>, Vec<u8>);
+    type Item = (Key, Value);
 
     /// Traverses to and yields the next key/value pair, in key order.
     fn next(&mut self) -> Option<Self::Item> {

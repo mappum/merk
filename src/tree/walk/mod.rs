@@ -4,7 +4,7 @@ mod ref_walker;
 pub use fetch::Fetch;
 pub use ref_walker::RefWalker;
 use crate::error::Result;
-use super::{Tree, Link};
+use super::{Tree, Link, Key, Value};
 use crate::owner::Owner;
 
 /// Allows traversal of a `Tree`, fetching from the given source when traversing
@@ -123,7 +123,7 @@ impl<S> Walker<S>
     }
 
     /// Similar to `Tree#with_value`.
-    pub fn with_value(mut self, value: Vec<u8>) -> Self {
+    pub fn with_value(mut self, value: Value) -> Self {
         self.tree.own(|t| t.with_value(value));
         self
     }

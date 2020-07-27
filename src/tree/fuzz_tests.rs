@@ -1,14 +1,17 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
+
 use rand::prelude::*;
+use smallvec::smallvec;
+
 use crate::*;
 use crate::tree::*;
 use crate::test_utils::*;
 
 const ITERATIONS: usize = 2_000;
 
-type Map = BTreeMap<Vec<u8>, Vec<u8>>;
+type Map = BTreeMap<Key, Value>;
 
 #[test]
 fn fuzz() {
@@ -69,22 +72,28 @@ fn make_batch(maybe_tree: Option<&Tree>, size: u64, seed: u64) -> Vec<BatchEntry
         entries[index].0.clone()
     };
 
+    let random_key = |size| {
+        let mut value: Key = smallvec![0; size];
+        rng.borrow_mut().fill_bytes(&mut value[..]);
+        value
+    };
+
     let random_value = |size| {
-        let mut value = vec![0; size];
+        let mut value: Value = smallvec![0; size];
         rng.borrow_mut().fill_bytes(&mut value[..]);
         value
     };
 
     let insert = || {
-        (random_value(2), Op::Put(random_value(2)))
+        (random_key(2), Op::Put(random_value(2)))
     };
     let update = || {
         let key = get_random_key();
-        (key.to_vec(), Op::Put(random_value(2)))
+        (key, Op::Put(random_value(2)))
     };
     let delete = || {
         let key = get_random_key();
-        (key.to_vec(), Op::Delete)
+        (key, Op::Delete)
     };
 
     for _ in 0..size {
@@ -101,7 +110,7 @@ fn make_batch(maybe_tree: Option<&Tree>, size: u64, seed: u64) -> Vec<BatchEntry
     batch.sort_by(|a, b| a.0.cmp(&b.0));
 
     // remove dupes
-    let mut maybe_prev_key: Option<Vec<u8>> = None;
+    let mut maybe_prev_key: Option<Key> = None;
     let mut deduped_batch = Vec::with_capacity(batch.len());
     for entry in batch {
         if let Some(prev_key) = &maybe_prev_key {
@@ -120,7 +129,7 @@ fn apply_to_map(map: &mut Map, batch: &Batch) {
     for entry in batch.iter() {
         match entry {
             (key, Op::Put(value)) => {
-                map.insert(key.to_vec(), value.to_vec());
+                map.insert(key.clone(), value.clone());
             },
             (key, Op::Delete) => {
                 map.remove(key);

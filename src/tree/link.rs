@@ -1,6 +1,7 @@
 use std::cmp::max;
+use smallvec::SmallVec;
 use super::hash::Hash;
-use super::Tree;
+use super::{Tree, Key, Value};
 
 // TODO: optimize memory footprint
 
@@ -13,7 +14,7 @@ pub enum Link {
     Pruned {
         hash: Hash,
         child_heights: (u8, u8),
-        key: Vec<u8>
+        key: Key
     },
 
     /// Represents a tree node which has been modified since the `Tree`'s last
@@ -153,13 +154,14 @@ impl Link {
 
 #[cfg(test)]
 mod test {
+    use smallvec::smallvec;
     use super::*;
     use super::super::Tree;
     use super::super::hash::NULL_HASH;
     
     #[test]
     fn from_modified_tree() {
-        let tree = Tree::new(vec![0], vec![1]);
+        let tree = Tree::new(smallvec![0], vec![1]);
         let link = Link::from_modified_tree(tree);
         assert!(link.is_modified());
         assert_eq!(link.height(), 1);
@@ -176,7 +178,7 @@ mod test {
         let link = Link::maybe_from_modified_tree(None);
         assert!(link.is_none());
 
-        let tree = Tree::new(vec![0], vec![1]);
+        let tree = Tree::new(smallvec![0], vec![1]);
         let link = Link::maybe_from_modified_tree(Some(tree));
         assert!(link.expect("expected link").is_modified());
     }
@@ -186,8 +188,8 @@ mod test {
         let hash = NULL_HASH;
         let child_heights = (0, 0);
         let pending_writes = 1;
-        let key = vec![0];
-        let tree = || Tree::new(vec![0], vec![1]);
+        let key = smallvec![0];
+        let tree = || Tree::new(smallvec![0], vec![1]);
 
         let pruned = Link::Pruned { hash, child_heights, key };
         let modified = Link::Modified { pending_writes, child_heights, tree: tree() };
@@ -222,7 +224,7 @@ mod test {
         Link::Modified {
             pending_writes: 1,
             child_heights: (1, 1),
-            tree: Tree::new(vec![0], vec![1])
+            tree: Tree::new(smallvec![0], vec![1])
         }.hash();
     }
 
@@ -232,7 +234,7 @@ mod test {
         Link::Modified {
             pending_writes: 1,
             child_heights: (1, 1),
-            tree: Tree::new(vec![0], vec![1])
+            tree: Tree::new(smallvec![0], vec![1])
         }.into_pruned();
     }
 }
