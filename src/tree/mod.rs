@@ -369,6 +369,7 @@ pub fn side_to_str(left: bool) -> &'static str {
 
 #[cfg(test)]
 mod test {
+    use smallvec::smallvec as vec;
     use super::Tree;
     use super::hash::NULL_HASH;
     use super::commit::NoopCommit;

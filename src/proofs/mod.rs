@@ -3,7 +3,7 @@ mod encoding;
 mod query;
 mod verify;
 
-use crate::tree::{Link, RefWalker, Fetch, Hash};
+use crate::tree::{Link, RefWalker, Fetch, Hash, Key, Value};
 
 pub use encoding::{encode_into, Decoder};
 pub use verify::verify;
@@ -36,6 +36,6 @@ pub enum Node {
     KVHash(Hash),
 
     /// Represents the key and value of a tree node.
-    KV(Vec<u8>, Vec<u8>)
+    KV(Key, Value)
 }
 

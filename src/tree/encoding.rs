@@ -134,11 +134,12 @@ impl Tree {
 
 #[cfg(test)]
 mod test {
+    use smallvec::smallvec as sv;
     use super::super::{Tree, Link};
 
     #[test]
     fn encode_leaf_tree() {
-        let tree = Tree::new(vec![0], vec![1]);
+        let tree = Tree::new(sv![0], sv![1]);
         assert_eq!(tree.encoding_length(), 25);
 
         let mut bytes = vec![];
@@ -149,7 +150,7 @@ mod test {
     #[test]
     fn encode_link() {
         let link = Link::Pruned {
-            key: vec![1, 2, 3],
+            key: sv![1, 2, 3],
             child_heights: (123, 124),
             hash: [55; 20]
         };
@@ -164,7 +165,7 @@ mod test {
     #[should_panic]
     fn encode_link_long_key() {
         let link = Link::Pruned {
-            key: vec![123; 300],
+            key: sv![123; 300],
             child_heights: (123, 124),
             hash: [55; 20]
         };
@@ -176,12 +177,12 @@ mod test {
     #[should_panic]
     fn encode_modified_tree() {
         let tree = Tree::from_fields(
-            vec![0], vec![1],
+            sv![0], sv![1],
             [55; 20],
             Some(Link::Modified {
                 pending_writes: 1,
                 child_heights: (123, 124),
-                tree: Tree::new(vec![2], vec![3])
+                tree: Tree::new(sv![2], sv![3])
             }),
             None
         );
@@ -192,12 +193,12 @@ mod test {
     #[test]
     fn encode_stored_tree() {
         let tree = Tree::from_fields(
-            vec![0], vec![1],
+            sv![0], sv![1],
             [55; 20],
             Some(Link::Stored {
                 hash: [66; 20],
                 child_heights: (123, 124),
-                tree: Tree::new(vec![2], vec![3])
+                tree: Tree::new(sv![2], sv![3])
             }),
             None
         );
@@ -209,12 +210,12 @@ mod test {
     #[test]
     fn encode_pruned_tree() {
         let tree = Tree::from_fields(
-            vec![0], vec![1],
+            sv![0], sv![1],
             [55; 20],
             Some(Link::Pruned {
                 hash: [66; 20],
                 child_heights: (123, 124),
-                key: vec![2]
+                key: sv![2]
             }),
             None
         );
@@ -240,7 +241,7 @@ mod test {
         assert_eq!(tree.key(), &[0]);
         assert_eq!(tree.value(), &[1]);
         if let Some(Link::Pruned { key, child_heights, hash }) = tree.link(true) {
-            assert_eq!(key, &[2]);
+            assert_eq!(&key[..], &[2][..]);
             assert_eq!(child_heights, &(123 as u8, 124 as u8));
             assert_eq!(hash, &[66 as u8; 20]);
         } else {

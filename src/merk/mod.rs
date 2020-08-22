@@ -79,9 +79,11 @@ impl Merk {
     }
 
     /// Gets an auxiliary value. 
-    pub fn get_aux(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    pub fn get_aux(&self, key: &[u8]) -> Result<Option<Value>> {
         let aux_cf = self.db.cf_handle("aux");
-        Ok(self.db.get_cf(aux_cf.unwrap(), key)?)
+        let value = self.db.get_pinned_cf(aux_cf.unwrap(), key)?
+            .map(|value| value.as_ref().into());
+        Ok(value)
     }
 
     /// Gets a value for the given key. If the key is not found, `None` is
@@ -138,6 +140,7 @@ impl Merk {
     ///
     /// # Example
     /// ```
+    /// # use smallvec::smallvec as vec;
     /// # let mut store = merk::test_utils::TempMerk::new().unwrap();
     /// # store.apply(&[(vec![4,5,6], Op::Put(vec![0]))], &[]).unwrap();
     /// 
@@ -176,6 +179,7 @@ impl Merk {
     ///
     /// # Example
     /// ```
+    /// # use smallvec::smallvec as vec;
     /// # let mut store = merk::test_utils::TempMerk::new().unwrap();
     /// # store.apply(&[(vec![4,5,6], Op::Put(vec![0]))], &[]).unwrap();
     /// 
@@ -421,6 +425,7 @@ fn fetch_existing_node(db: &rocksdb::DB, key: &[u8]) -> Result<Tree> {
 
 #[cfg(test)]
 mod test {
+    use smallvec::smallvec as sv;
     use std::thread;
     use crate::test_utils::*;
     use crate::Op;
@@ -500,9 +505,9 @@ mod test {
     fn aux_data() {
         let path = thread::current().name().unwrap().to_owned();
         let mut merk = TempMerk::open(path).expect("failed to open merk");
-        merk.apply(&[], &[(vec![1,2,3], Op::Put(vec![4,5,6]))]).expect("apply failed");
+        merk.apply(&[], &[(sv![1,2,3], Op::Put(sv![4,5,6]))]).expect("apply failed");
         let val = merk.get_aux(&[1,2,3]).unwrap();
-        assert_eq!(val, Some(vec![4,5,6]));
+        assert_eq!(val, Some(sv![4,5,6]));
     }
 
     #[test]
@@ -511,8 +516,8 @@ mod test {
         let mut merk = CrashMerk::open(path).expect("failed to open merk");
 
         merk.apply(
-            &[(vec![0], Op::Put(vec![1]))],
-            &[(vec![2], Op::Put(vec![3]))]
+            &[(sv![0], Op::Put(sv![1]))],
+            &[(sv![2], Op::Put(sv![3]))]
         ).expect("apply failed");
 
         // make enough changes so that main column family gets auto-flushed
@@ -525,7 +530,7 @@ mod test {
 
         merk.crash().unwrap();
 
-        assert_eq!(merk.get_aux(&[2]).unwrap(), Some(vec![3]));
+        assert_eq!(merk.get_aux(&[2]).unwrap(), Some(sv![3]));
         merk.destroy().unwrap();
     }
 
@@ -538,14 +543,14 @@ mod test {
         assert!(merk.get(&[1, 2, 3]).unwrap().is_none());
 
         // cached
-        merk.apply(&[(vec![5, 5, 5], Op::Put(vec![]))], &[]).unwrap();
+        merk.apply(&[(sv![5, 5, 5], Op::Put(sv![]))], &[]).unwrap();
         assert!(merk.get(&[1, 2, 3]).unwrap().is_none());
 
         // uncached
         merk.apply(&[
-            (vec![0, 0, 0], Op::Put(vec![])),
-            (vec![1, 1, 1], Op::Put(vec![])),
-            (vec![2, 2, 2], Op::Put(vec![]))
+            (sv![0, 0, 0], Op::Put(sv![])),
+            (sv![1, 1, 1], Op::Put(sv![])),
+            (sv![2, 2, 2], Op::Put(sv![]))
         ], &[]).unwrap();
         assert!(merk.get(&[3, 3, 3]).unwrap().is_none());
     }

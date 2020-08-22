@@ -66,6 +66,7 @@ impl KV {
 
 #[cfg(test)]
 mod test {
+    use smallvec::smallvec as vec;
     use super::*;
 
     #[test]

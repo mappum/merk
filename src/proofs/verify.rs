@@ -1,6 +1,6 @@
 use failure::bail;
 use super::{Op, Node, Decoder};
-use crate::tree::{NULL_HASH, Hash, kv_hash, node_hash};
+use crate::tree::{NULL_HASH, Hash, kv_hash, node_hash, Key, Value};
 use crate::error::Result;
 
 /// A binary tree data structure used to represent a select subset of a tree
@@ -103,33 +103,33 @@ impl Tree {
 /// a proven value will have an entry of `Some(value)`.
 pub fn verify(
     bytes: &[u8],
-    keys: &[Vec<u8>],
+    keys: &[Key],
     expected_hash: Hash
-) -> Result<Vec<Option<Vec<u8>>>> {
+) -> Result<Vec<Option<Value>>> {
     // TODO: enforce a maximum proof size
-
+    
+    let mut stack: Vec<Tree> = Vec::with_capacity(32);
     let mut output = Vec::with_capacity(keys.len());
 
     let mut key_index = 0;
-    // let mut last_push = None;
+    let mut last_push = None;
 
     fn try_pop(stack: &mut Vec<Tree>) -> Result<Tree> {
         match stack.pop() {
             None => bail!("Stack underflow"),
             Some(tree) => Ok(tree)
         }
-    }
+    };
 
-    let mut stack: Vec<Tree> = Vec::with_capacity(32);
-    let mut push = |op| -> Result<()> {
-        let tree = match op? {
+    for op in Decoder::new(bytes) {
+        match op? {
             Op::Parent => {
                 let (mut parent, child) = (
                     try_pop(&mut stack)?,
                     try_pop(&mut stack)?
                 );
                 parent.attach(true, child)?;
-                parent
+                stack.push(parent);
             },
             Op::Child => {
                 let (child, mut parent) = (
@@ -137,63 +137,60 @@ pub fn verify(
                     try_pop(&mut stack)?
                 );
                 parent.attach(false, child)?;
-                parent
+                stack.push(parent);
             },
-            Op::Push(node) => node.into()
-        };
-        stack.push(tree);
-        Ok(())
-    };
+            Op::Push(node) => {
+                let node_clone = node.clone();
+                let tree: Tree = node.into();
+                stack.push(tree);
 
-    Decoder::new(bytes)
-        .map(push)
-        .collect::<Result<_>>()?;
+                if let Node::KV(key, value) = &node_clone {
+                    // keys should always be increasing
+                    if let Some(Node::KV(last_key, _)) = &last_push {
+                        if key <= last_key {
+                            bail!("Incorrect key ordering");
+                        }
+                    }
 
-    //     // if let Node::KV(key, value) = &node_clone {
-    //     //     // keys should always be increasing
-    //     //     if let Some(Node::KV(last_key, _)) = &last_push {
-    //     //         if key <= last_key {
-    //     //             bail!("Incorrect key ordering");
-    //     //         }
-    //     //     }
+                    loop {
+                        if key_index >= keys.len() || *key < keys[key_index] {
+                            break;
+                        } else if key == &keys[key_index] {
+                            // KV for queried key
+                            output.push(Some(value.clone()));
+                        } else if *key > keys[key_index] {
+                            match &last_push {
+                                None | Some(Node::KV(_, _)) => {
+                                    // previous push was a boundary (global edge or lower key),
+                                    // so this is a valid absence proof
+                                    output.push(None);
+                                },
+                                // proof is incorrect since it skipped queried keys
+                                _ => bail!("Proof incorrectly formed")
+                            }
+                        }
 
-    //     //     loop {
-    //     //         if key_index >= keys.len() || *key < keys[key_index] {
-    //     //             break;
-    //     //         } else if key == &keys[key_index] {
-    //     //             // KV for queried key
-    //     //             output.push(Some(value.clone()));
-    //     //         } else if *key > keys[key_index] {
-    //     //             match &last_push {
-    //     //                 None | Some(Node::KV(_, _)) => {
-    //     //                     // previous push was a boundary (global edge or lower key),
-    //     //                     // so this is a valid absence proof
-    //     //                     output.push(None);
-    //     //                 },
-    //     //                 // proof is incorrect since it skipped queried keys
-    //     //                 _ => bail!("Proof incorrectly formed")
-    //     //             }
-    //     //         }
+                        key_index += 1;
+                    }
+                }
 
-    //     //         key_index += 1;
-    //     //     }
-    //     // }
+                last_push = Some(node_clone);
+            }
+        }
+    }
 
-    //     // last_push = Some(node_clone);
-    // }
-
-    // // absence proofs for right edge
-    // if key_index < keys.len() {
-    //     if let Some(Node::KV(_, _)) = last_push {
-    //         for _ in 0..(keys.len() - key_index) {
-    //             output.push(None);
-    //         }
-    //     } else {
-    //         bail!("Proof incorrectly formed");
-    //     }
-    // } else {
-    //     debug_assert_eq!(keys.len(), output.len());
-    // }
+    // absence proofs for right edge
+    if key_index < keys.len() {
+        if let Some(Node::KV(_, _)) = last_push {
+            for _ in 0..(keys.len() - key_index) {
+                output.push(None);
+            }
+        } else {
+            bail!("Proof incorrectly formed");
+        }
+    } else {
+        debug_assert_eq!(keys.len(), output.len());
+    }
 
     if stack.len() != 1 {
         bail!("Expected proof to result in exactly one stack item");
@@ -213,21 +210,22 @@ pub fn verify(
 
 #[cfg(test)]
 mod test {
+    use smallvec::smallvec as sv;
     use super::*;
     use super::super::*;
     use crate::tree::{NoopCommit, RefWalker, PanicSource};
     use crate::tree;
 
     fn make_3_node_tree() -> tree::Tree {
-        let mut tree = tree::Tree::new(vec![5], vec![5])
-            .attach(true, Some(tree::Tree::new(vec![3], vec![3])))
-            .attach(false, Some(tree::Tree::new(vec![7], vec![7])));
+        let mut tree = tree::Tree::new(sv![5], sv![5])
+            .attach(true, Some(tree::Tree::new(sv![3], sv![3])))
+            .attach(false, Some(tree::Tree::new(sv![7], sv![7])));
         tree.commit(&mut NoopCommit {})
             .expect("commit failed");
         tree
     }
 
-    fn verify_test(keys: Vec<Vec<u8>>, expected_result: Vec<Option<Vec<u8>>>) {
+    fn verify_test(keys: Vec<Key>, expected_result: Vec<Option<Value>>) {
         let mut tree = make_3_node_tree();
         let mut walker = RefWalker::new(&mut tree, PanicSource {});
 
@@ -244,42 +242,42 @@ mod test {
 
     #[test]
     fn root_verify() {
-        verify_test(vec![ vec![5] ], vec![ Some(vec![5]) ]);
+        verify_test(vec![ sv![5] ], vec![ Some(sv![5]) ]);
     }
 
     #[test]
     fn single_verify() {
-        verify_test(vec![ vec![3] ], vec![ Some(vec![3]) ]);
+        verify_test(vec![ sv![3] ], vec![ Some(sv![3]) ]);
     }
 
     #[test]
     fn double_verify() {
        verify_test(
-           vec![ vec![3], vec![5] ],
-           vec![ Some(vec![3]), Some(vec![5]) ]
+           vec![ sv![3], sv![5] ],
+           vec![ Some(sv![3]), Some(sv![5]) ]
         );
     }
 
     #[test]
     fn double_verify_2() {
        verify_test(
-           vec![ vec![3], vec![7] ],
-           vec![ Some(vec![3]), Some(vec![7]) ]
+           vec![ sv![3], sv![7] ],
+           vec![ Some(sv![3]), Some(sv![7]) ]
         );
     }
 
     #[test]
     fn triple_verify() {
        verify_test(
-           vec![ vec![3], vec![5], vec![7] ],
-           vec![ Some(vec![3]), Some(vec![5]), Some(vec![7]) ]
+           vec![ sv![3], sv![5], sv![7] ],
+           vec![ Some(sv![3]), Some(sv![5]), Some(sv![7]) ]
         );
     }
 
     #[test]
     fn left_edge_absence_verify() {
        verify_test(
-           vec![ vec![2] ],
+           vec![ sv![2] ],
            vec![ None ]
         );
     }
@@ -287,7 +285,7 @@ mod test {
     #[test]
     fn right_edge_absence_verify() {
        verify_test(
-           vec![ vec![8] ],
+           vec![ sv![8] ],
            vec![ None ]
         );
     }
@@ -295,7 +293,7 @@ mod test {
     #[test]
     fn inner_absence_verify() {
        verify_test(
-           vec![ vec![6] ],
+           vec![ sv![6] ],
            vec![ None ]
         );
     }
@@ -303,8 +301,8 @@ mod test {
     #[test]
     fn absent_and_present_verify() {
        verify_test(
-           vec![ vec![5], vec![6] ],
-           vec![ Some(vec![5]), None ]
+           vec![ sv![5], sv![6] ],
+           vec![ Some(sv![5]), None ]
         );
     }
 }

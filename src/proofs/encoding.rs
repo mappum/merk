@@ -5,7 +5,7 @@ use ed::{Encode, Decode, Terminated};
 use failure::bail;
 
 use super::{Op, Node};
-use crate::tree::HASH_LENGTH;
+use crate::tree::{HASH_LENGTH, Key, Value};
 use crate::error::Result;
 
 impl Encode for Op {
@@ -65,12 +65,12 @@ impl Decode for Op {
             },
             0x03 => {
                 let key_len: u8 = Decode::decode(&mut input)?;
-                let mut key = Vec::with_capacity(key_len as usize);
+                let mut key = Key::with_capacity(key_len as usize);
                 key.resize(key_len as usize, 0);
                 input.read_exact(key.as_mut_slice())?;
 
                 let value_len: u16 = Decode::decode(&mut input)?;
-                let mut value = Vec::with_capacity(value_len as usize);
+                let mut value = Value::with_capacity(value_len as usize);
                 value.resize(value_len as usize, 0);
                 input.read_exact(value.as_mut_slice())?;
 
@@ -142,6 +142,7 @@ impl<'a> Iterator for Decoder<'a> {
 
 #[cfg(test)]
 mod test {
+    use smallvec::smallvec as sv;
     use super::super::{Op, Node};
     use crate::tree::HASH_LENGTH;
 
@@ -167,7 +168,7 @@ mod test {
 
     #[test]
     fn encode_push_kv() {
-        let op = Op::Push(Node::KV(vec![1, 2, 3], vec![4, 5, 6]));
+        let op = Op::Push(Node::KV(sv![1, 2, 3], sv![4, 5, 6]));
         assert_eq!(op.encoding_length(), 10);
 
         let mut bytes = vec![];
@@ -198,7 +199,7 @@ mod test {
     #[test]
     #[should_panic]
     fn encode_push_kv_long_key() {
-        let op = Op::Push(Node::KV(vec![123; 300], vec![4, 5, 6]));
+        let op = Op::Push(Node::KV(sv![123; 300], sv![4, 5, 6]));
         let mut bytes = vec![];
         op.encode_into(&mut bytes).unwrap();
     }
@@ -221,7 +222,7 @@ mod test {
     fn decode_push_kv() {
         let bytes = [0x03, 3, 1, 2, 3, 0, 3, 4, 5, 6];
         let op = Op::decode(&bytes[..]).expect("decode failed");
-        assert_eq!(op, Op::Push(Node::KV(vec![1, 2, 3], vec![4, 5, 6])));
+        assert_eq!(op, Op::Push(Node::KV(sv![1, 2, 3], sv![4, 5, 6])));
     }
 
     #[test]

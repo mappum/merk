@@ -67,6 +67,7 @@ impl DerefMut for CrashMerk {
 
 #[cfg(test)]
 mod tests {
+    use smallvec::smallvec as vec;
     use super::super::TempMerk;
     use super::CrashMerk;
     use crate::Op;

@@ -148,19 +148,19 @@ mod test {
 
     impl Fetch for MockSource {
         fn fetch(&self, link: &Link) -> Result<Tree> {
-            Ok(Tree::new(link.key().to_vec(), b"foo".to_vec()))
+            Ok(Tree::new(link.key().into(), b"foo"[..].into()))
         }
     }
 
     #[test]
     fn walk_modified() {
         let tree = Tree::new(
-                b"test".to_vec(),
-                b"abc".to_vec()
+                b"test"[..].into(),
+                b"abc"[..].into()
             )
             .attach(true, Some(Tree::new(
-                b"foo".to_vec(),
-                b"bar".to_vec()
+                b"foo"[..].into(),
+                b"bar"[..].into()
             )));
 
         let source = MockSource {};
@@ -176,12 +176,12 @@ mod test {
     #[test]
     fn walk_stored() {
         let mut tree = Tree::new(
-                b"test".to_vec(),
-                b"abc".to_vec()
+                b"test"[..].into(),
+                b"abc"[..].into()
             )
             .attach(true, Some(Tree::new(
-                b"foo".to_vec(),
-                b"bar".to_vec()
+                b"foo"[..].into(),
+                b"bar"[..].into()
             )));
         tree.commit(&mut NoopCommit {})
             .expect("commit failed");
@@ -199,12 +199,12 @@ mod test {
     #[test]
     fn walk_pruned() {
         let tree = Tree::from_fields(
-            b"test".to_vec(),
-            b"abc".to_vec(),
+            b"test"[..].into(),
+            b"abc"[..].into(),
             Default::default(),
             Some(Link::Pruned {
                 hash: Default::default(),
-                key: b"foo".to_vec(),
+                key: b"foo"[..].into(),
                 child_heights: (0, 0)
             }),
             None
@@ -223,8 +223,8 @@ mod test {
     #[test]
     fn walk_none() {
         let tree = Tree::new(
-            b"test".to_vec(),
-            b"abc".to_vec()
+            b"test"[..].into(),
+            b"abc"[..].into()
         );
 
         let source = MockSource {};

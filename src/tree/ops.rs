@@ -295,6 +295,7 @@ impl<S> Walker<S>
 
 #[cfg(test)]
 mod test {
+    use smallvec::{smallvec as sv, SmallVec};
     use super::*;
     use crate::tree::*;
     use crate::test_utils::{
@@ -309,11 +310,11 @@ mod test {
     fn simple_insert() {
         let batch = [
             (
-                b"foo2".to_vec(),
-                Op::Put(b"bar2".to_vec())
+                b"foo2"[..].into(),
+                Op::Put(b"bar2"[..].into())
             )
         ];
-        let tree = Tree::new(b"foo".to_vec(), b"bar".to_vec());
+        let tree = Tree::new(b"foo"[..].into(), b"bar"[..].into());
         let (maybe_walker, deleted_keys) = Walker::new(tree, PanicSource {})
             .apply(&batch)
             .expect("apply errored");
@@ -327,11 +328,11 @@ mod test {
     fn simple_update() {
         let batch = [
             (
-                b"foo".to_vec(),
-                Op::Put(b"bar2".to_vec())
+                b"foo"[..].into(),
+                Op::Put(b"bar2"[..].into())
             )
         ];
-        let tree = Tree::new(b"foo".to_vec(), b"bar".to_vec());
+        let tree = Tree::new(b"foo"[..].into(), b"bar"[..].into());
         let (maybe_walker, deleted_keys) = Walker::new(tree, PanicSource {})
             .apply(&batch)
             .expect("apply errored");
@@ -346,16 +347,16 @@ mod test {
     #[test]
     fn simple_delete() {
         let batch = [
-            (b"foo2".to_vec(), Op::Delete)
+            (b"foo2"[..].into(), Op::Delete)
         ];
         let tree = Tree::from_fields(
-            b"foo".to_vec(), b"bar".to_vec(),
+            b"foo"[..].into(), b"bar"[..].into(),
             [123; 20],
             None,
             Some(Link::Stored {
                 hash: [123; 20],
                 child_heights: (0, 0),
-                tree: Tree::new(b"foo2".to_vec(), b"bar2".to_vec())
+                tree: Tree::new(b"foo2"[..].into(), b"bar2"[..].into())
             })
         );
         let (maybe_walker, deleted_keys) = Walker::new(tree, PanicSource {})
@@ -367,16 +368,16 @@ mod test {
         assert!(walker.tree().link(true).is_none());
         assert!(walker.tree().link(false).is_none());
         assert_eq!(deleted_keys.len(), 1);
-        assert_eq!(*deleted_keys.front().unwrap(), b"foo2");
+        assert_eq!(deleted_keys.front().unwrap()[..], b"foo2"[..]);
     }
 
     #[test]
     #[should_panic]
     fn delete_non_existent() {
         let batch = [
-            (b"foo2".to_vec(), Op::Delete)
+            (b"foo2"[..].into(), Op::Delete)
         ];
-        let tree = Tree::new(b"foo".to_vec(), b"bar".to_vec());
+        let tree = Tree::new(b"foo"[..].into(), b"bar"[..].into());
         Walker::new(tree, PanicSource {})
             .apply(&batch)
             .unwrap();
@@ -385,15 +386,15 @@ mod test {
     #[test]
     fn delete_only_node() {
         let batch = [
-            (b"foo".to_vec(), Op::Delete)
+            (b"foo"[..].into(), Op::Delete)
         ];
-        let tree = Tree::new(b"foo".to_vec(), b"bar".to_vec());
+        let tree = Tree::new(b"foo"[..].into(), b"bar"[..].into());
         let (maybe_walker, deleted_keys) = Walker::new(tree, PanicSource {})
             .apply(&batch)
             .expect("apply errored");
         assert!(maybe_walker.is_none());
         assert_eq!(deleted_keys.len(), 1);
-        assert_eq!(deleted_keys.front().unwrap(), b"foo");
+        assert_eq!(deleted_keys.front().unwrap()[..], b"foo"[..]);
     }
 
     #[test]
@@ -429,7 +430,7 @@ mod test {
             .apply(&batch)
             .expect("apply errored");
         maybe_walker.expect("should be Some");
-        let mut deleted_keys: Vec<&Vec<u8>> = deleted_keys.iter().collect();
+        let mut deleted_keys: Vec<&Key> = deleted_keys.iter().collect();
         deleted_keys.sort_by(|a, b| a.cmp(&b));
         assert_eq!(deleted_keys, vec![ &seq_key(7), &seq_key(9) ]);
     }
@@ -444,7 +445,7 @@ mod test {
 
     #[test]
     fn insert_empty_single() {
-        let batch = vec![ (vec![0], Op::Put(vec![1])) ];
+        let batch = vec![ (sv![0], Op::Put(sv![1])) ];
         let (maybe_tree, deleted_keys) = Walker::<PanicSource>::apply_to(None, &batch)
             .expect("apply_to failed");
         let tree = maybe_tree.expect("expected tree");
@@ -456,8 +457,8 @@ mod test {
 
     #[test]
     fn insert_root_single() {
-        let tree = Tree::new(vec![5], vec![123]);
-        let batch = vec![ (vec![6], Op::Put(vec![123])) ];
+        let tree = Tree::new(sv![5], sv![123]);
+        let batch = vec![ (sv![6], Op::Put(sv![123])) ];
         let tree = apply_memonly(tree, &batch);
         assert_eq!(tree.key(), &[5]);
         assert!(tree.child(true).is_none());
@@ -466,10 +467,10 @@ mod test {
 
     #[test]
     fn insert_root_double() {
-        let tree = Tree::new(vec![5], vec![123]);
+        let tree = Tree::new(sv![5], sv![123]);
         let batch = vec![
-            (vec![4], Op::Put(vec![123])),
-            (vec![6], Op::Put(vec![123]))
+            (sv![4], Op::Put(sv![123])),
+            (sv![6], Op::Put(sv![123]))
         ];
         let tree = apply_memonly(tree, &batch);
         assert_eq!(tree.key(), &[5]);
@@ -479,12 +480,12 @@ mod test {
 
     #[test]
     fn insert_rebalance() {
-        let tree = Tree::new(vec![5], vec![123]);
+        let tree = Tree::new(sv![5], sv![123]);
 
-        let batch = vec![ (vec![6], Op::Put(vec![123])) ];
+        let batch = vec![ (sv![6], Op::Put(sv![123])) ];
         let tree = apply_memonly(tree, &batch);
 
-        let batch = vec![ (vec![7], Op::Put(vec![123])) ];
+        let batch = vec![ (sv![7], Op::Put(sv![123])) ];
         let tree = apply_memonly(tree, &batch);
 
         assert_eq!(tree.key(), &[6]);
@@ -494,10 +495,10 @@ mod test {
 
     #[test]
     fn insert_100_sequential() {
-        let mut tree = Tree::new(vec![0], vec![123]);
+        let mut tree = Tree::new(sv![0], sv![123]);
 
         for i in 0..100 {
-            let batch = vec![ (vec![i + 1], Op::Put(vec![123])) ];
+            let batch = vec![ (sv![i + 1], Op::Put(sv![123])) ];
             tree = apply_memonly(tree, &batch);
         }
 
